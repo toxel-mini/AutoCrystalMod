@@ -1,0 +1,100 @@
+package com.autocrystal;
+
+import net.minecraft.block.Blocks;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.decoration.EndCrystalEntity;
+import net.minecraft.item.Items;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.Vec3d;
+
+import java.util.List;
+
+public class AutoCrystalFeature {
+
+    // How many blocks around the player to search for obsidian
+    private static final int SEARCH_RADIUS = 3;
+
+    // Delay between each place+pop cycle (in ticks). 1 = as fast as possible
+    private int tickDelay = 0;
+    private int tickCounter = 0;
+
+    public void onTick(MinecraftClient client) {
+        // Only run when right click is held
+        if (client.player == null || client.world == null || client.interactionManager == null) return;
+        if (!client.options.useKey.isPressed()) return;
+
+        // Only run if holding End Crystals
+        if (client.player.getMainHandStack().getItem() != Items.END_CRYSTAL) return;
+
+        tickCounter++;
+        if (tickCounter < tickDelay) return;
+        tickCounter = 0;
+
+        // Step 1: Pop any existing nearby crystals first
+        popNearbyCrystals(client);
+
+        // Step 2: Place a new crystal on nearby obsidian/bedrock
+        placeOnNearbyObsidian(client);
+    }
+
+    private void popNearbyCrystals(MinecraftClient client) {
+        Vec3d playerPos = client.player.getPos();
+
+        // Search nearby area for end crystals
+        Box searchBox = new Box(
+                playerPos.x - SEARCH_RADIUS, playerPos.y - SEARCH_RADIUS, playerPos.z - SEARCH_RADIUS,
+                playerPos.x + SEARCH_RADIUS, playerPos.y + SEARCH_RADIUS, playerPos.z + SEARCH_RADIUS
+        );
+
+        List<EndCrystalEntity> crystals = client.world.getEntitiesByClass(
+                EndCrystalEntity.class, searchBox, entity -> true
+        );
+
+        for (EndCrystalEntity crystal : crystals) {
+            // Attack (pop) the crystal
+            client.interactionManager.attackEntity(client.player, crystal);
+            client.player.swingHand(Hand.MAIN_HAND);
+            return; // Pop one per tick for controlled timing
+        }
+    }
+
+    private void placeOnNearbyObsidian(MinecraftClient client) {
+        BlockPos playerPos = client.player.getBlockPos();
+
+        // Search around player for obsidian or bedrock blocks
+        for (int x = -SEARCH_RADIUS; x <= SEARCH_RADIUS; x++) {
+            for (int z = -SEARCH_RADIUS; z <= SEARCH_RADIUS; z++) {
+                // Check the block at player's feet level and one below
+                for (int y = -1; y <= 1; y++) {
+                    BlockPos checkPos = playerPos.add(x, y, z);
+
+                    boolean isValidBase = client.world.getBlockState(checkPos).getBlock() == Blocks.OBSIDIAN
+                            || client.world.getBlockState(checkPos).getBlock() == Blocks.BEDROCK;
+
+                    if (!isValidBase) continue;
+
+                    // The crystal must be placed on TOP of the obsidian
+                    BlockPos placePos = checkPos.up();
+
+                    // Make sure the space above is empty (no block, no entity)
+                    boolean spaceEmpty = client.world.getBlockState(placePos).isAir()
+                            && client.world.getBlockState(placePos.up()).isAir();
+
+                    if (!spaceEmpty) continue;
+
+                    // Place the crystal
+                    Vec3d hitVec = Vec3d.ofCenter(placePos);
+                    BlockHitResult hitResult = new BlockHitResult(hitVec, Direction.UP, checkPos, false);
+
+                    client.interactionManager.interactBlock(client.player, Hand.MAIN_HAND, hitResult);
+                    return; // Place one per tick
+                }
+            }
+        }
+    }
+}
