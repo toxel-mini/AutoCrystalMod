@@ -13,8 +13,12 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-      - name: Build
-        run: chmod +x gradlew && ./gradlew build
+      - name: Install Gradle
+        run: |
+          wget https://services.gradle.org/distributions/gradle-8.5-bin.zip
+          unzip gradle-8.5-bin.zip
+          export PATH=$PATH:$PWD/gradle-8.5/bin
+          gradle build
       - name: Upload JAR
         uses: actions/upload-artifact@v4
         with:
